@@ -4,7 +4,7 @@
 
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 
-const DEFAULT_MODEL = 'gemini-flash-latest';
+const DEFAULT_MODEL = 'gemini-3.5-flash';
 
 export function munimModel() {
   const apiKey = process.env.GEMINI_API_KEY;

@@ -60,7 +60,7 @@ Everything runs against `api-m.sandbox.paypal.com`. There is no live mode.
 
 | AI tool | Job |
 | --- | --- |
-| Google Gemini (`GEMINI_MODEL`, `gemini-flash-latest` by default, free tier) via the Vercel AI SDK | Reads emails, chats and typed notes into an invoice using structured output checked against a zod schema. |
+| Google Gemini (`GEMINI_MODEL`, `gemini-3.5-flash` by default, free tier) via the Vercel AI SDK | Reads emails, chats and typed notes into an invoice using structured output checked against a zod schema. |
 | Same model, same SDK | Decides one action per open invoice and writes the reminder text and a one-sentence reason. |
 | Same model, same SDK | Writes the plain-English summary at the end of each run. |
 | Munim as a custom agent in the AG Studio Agent Framework (optional: needs an OpenAI key in `AG_STUDIO_OPENAI_API_KEY`, hidden without one) | Answers questions on the dashboard with its own tools (open invoices, client profile, forecast, approval queue, activity, propose reminder, run collections, approve action). It delegates charts and layout to Studio's built-in lead, page, widget, data and planning agents. |
