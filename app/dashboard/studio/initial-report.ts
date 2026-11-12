@@ -1,4 +1,5 @@
-// The built-in "PayPal overview" report: pages for revenue, receivables, cash and catalogue, as
+// The built-in "Munim command centre" report: Munim and Clients pages, then the boilerplate's pages
+// for revenue, receivables, cash and catalogue, as
 // AG Studio report state. Field ids ('invoices.paidAmount') refer to the data sources in ./data.ts.
 
 import type { AgPageState, AgReportState, AgWidgetLayoutState } from 'ag-studio';
@@ -396,7 +397,159 @@ const catalogue: AgPageState = {
   },
 };
 // The report opens on its first page.
+// --- Munim -----------------------------------------------------------------------------
+// The command centre: Munim's two custom widgets (./widgets) on top, then the forecast, who owes
+// what, open invoices with Munim's risk level, and everything the agent did.
+
+type WidgetState = NonNullable<AgPageState['widgets']>[string];
+
+// Custom widget types aren't in the default registry's state types; the dashboard's AgStudio
+// registers them (see ./widgets), so they are cast here.
+const custom = (type: 'munim-today' | 'munim-approval-queue', text: string): WidgetState =>
+  ({ type, dataMapping: {}, format: title(text) }) as unknown as WidgetState;
+
+const munim: AgPageState = {
+  id: 'munim',
+  widgets: {
+    'munim-today': custom('munim-today', 'Munim today'),
+    'approval-queue': custom('munim-approval-queue', 'Waiting for your approval'),
+    forecast: {
+      type: 'area-chart',
+      dataMapping: {
+        categoryKey: [{ id: 'forecast.date' }],
+        valueKey: [sum('forecast.cumulative_expected'), sum('forecast.do_nothing_cumulative')],
+      },
+      format: {
+        ...title('Cash, next 30 days: with Munim vs doing nothing'),
+        subtitle: { enabled: true, text: "Heuristic: due date + the client's usual lateness, weighted by payment style" },
+        style: { theme: { common: { legend: { enabled: true } } } },
+      },
+    },
+    'overdue-by-client': {
+      type: 'bar-chart-grouped',
+      dataMapping: {
+        categoryKey: [{ id: 'customers.name' }],
+        valueKey: [sum('invoices.overdueAmount')],
+        legendKey: [{ id: 'invoices.currency' }],
+      },
+      format: {
+        ...title('Overdue by client'),
+        subtitle: { enabled: true, text: 'In each invoice currency, not converted' },
+        style: { theme: { common: { legend: { enabled: true } } } },
+      },
+    },
+    'open-invoices': {
+      type: 'grid',
+      dataMapping: {
+        cols: [
+          { id: 'invoices.number' },
+          { id: 'customers.name' },
+          { id: 'invoices.dueDate' },
+          { id: 'invoices.daysOverdue' },
+          { id: 'invoices.riskLevel' },
+          { id: 'invoices.riskRules' },
+          { id: 'invoices.remindersSent' },
+          { id: 'invoices.source' },
+          { id: 'invoices.currency' },
+          sum('invoices.outstanding'),
+        ],
+      },
+      sort: [{ field: { id: 'invoices.daysOverdue' }, direction: 'desc' }],
+      format: title('Open invoices and their risk'),
+    },
+    activity: {
+      type: 'grid',
+      dataMapping: {
+        cols: [
+          { id: 'agent_actions.date' },
+          { id: 'agent_actions.invoiceNumber' },
+          { id: 'agent_actions.client' },
+          { id: 'agent_actions.action' },
+          { id: 'agent_actions.status' },
+          { id: 'agent_actions.guardrail' },
+          { id: 'agent_actions.reason' },
+          { id: 'agent_actions.decidedBy' },
+        ],
+      },
+      sort: [{ field: { id: 'agent_actions.date' }, direction: 'desc' }],
+      format: title('What Munim did, and why'),
+    },
+  },
+  widgetLayout: {
+    'munim-today': at(0, 0, 11, 16),
+    'approval-queue': at(11, 0, 13, 16),
+    forecast: at(0, 16, 15, 18),
+    'overdue-by-client': at(15, 16, 9, 18),
+    'open-invoices': at(0, 34, 24, 18),
+    activity: at(0, 52, 24, 20),
+  },
+  filter: {
+    widget: {
+      'overdue-by-client': [{ field: { id: 'invoices.overdueAmount' }, model: { operator: 'greaterThan', value: 0 } }],
+      'open-invoices': [{ field: { id: 'invoices.isReceivable' }, model: { operator: 'isTrue' } }],
+    },
+  },
+};
+
+const clients: AgPageState = {
+  id: 'clients',
+  widgets: {
+    'kpi-clients': kpi('Clients', countd('client_profiles.email')),
+    'kpi-late': kpi('Average days late', avg('client_profiles.avgDaysLate')),
+    'kpi-open': kpi('Clients with open invoices', countd('invoices.customerId')),
+    styles: {
+      type: 'donut-chart',
+      dataMapping: {
+        categoryKey: [{ id: 'client_profiles.paymentStyle' }],
+        valueKey: [countd('client_profiles.email')],
+      },
+      format: {
+        ...title('Clients by payment style'),
+        subtitle: { enabled: true, text: 'prompt, slow, pays in parts, or no history yet' },
+        style: { custom: { pieDataLabel: { enabled: true }, totalLabel: { enabled: true } } },
+      },
+    },
+    'days-late': {
+      type: 'bar-chart-grouped',
+      dataMapping: {
+        categoryKey: [{ id: 'client_profiles.name' }],
+        valueKey: [avg('client_profiles.avgDaysLate')],
+      },
+      format: {
+        ...title('Average days late, by client'),
+        subtitle: { enabled: true, text: 'Days paid after the due date; negative is early' },
+      },
+    },
+    'client-table': {
+      type: 'grid',
+      dataMapping: {
+        cols: [
+          { id: 'client_profiles.name' },
+          { id: 'client_profiles.company' },
+          { id: 'client_profiles.email' },
+          { id: 'client_profiles.paymentStyle' },
+          { id: 'client_profiles.avgDaysLate' },
+          { id: 'client_profiles.invoicesPaid' },
+          { id: 'client_profiles.invoicesOpen' },
+          { id: 'client_profiles.notes' },
+        ],
+      },
+      sort: [{ field: { id: 'client_profiles.avgDaysLate' }, direction: 'desc' }],
+      format: title('Client profiles'),
+    },
+  },
+  widgetLayout: {
+    'kpi-clients': at(0, 0, 8, 7),
+    'kpi-late': at(8, 0, 8, 7),
+    'kpi-open': at(16, 0, 8, 7),
+    styles: at(0, 7, 9, 18),
+    'days-late': at(9, 7, 15, 18),
+    'client-table': at(0, 25, 24, 20),
+  },
+  filter: { widget: { 'kpi-open': [{ field: { id: 'invoices.isReceivable' }, model: { operator: 'isTrue' } }] } },
+};
+
 export const dashboardReport: AgReportState = {
-  selectedPageId: revenue.id,
-  pages: [revenue, receivables, cash, catalogue],
+  selectedPageId: munim.id,
+  pages: [munim, clients, revenue, receivables, cash, catalogue],
 };

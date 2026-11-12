@@ -10,7 +10,8 @@
 // Nothing tracks edits as they happen. Save reads the report from Studio with getState(), and
 // leaving a report compares Studio's state with the saved one there and then.
 
-import { useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   AgStudioAiModule,
   enableStudioDevValidations,
@@ -48,6 +49,10 @@ import * as reportState from './report-state';
 import { buildAi } from './studio/ai';
 import { buildStudioData, hasData } from './studio/data';
 import { agStudioPayPalTheme } from './studio/theme';
+import { onMunimChanged } from './studio/widgets/events';
+import { ClockPill } from '@/app/(munim)/_ui/clock-pill';
+import { Toaster } from '@/app/components/toaster';
+import { munimWidgets, type MunimRegistry } from './studio/widgets';
 import { useReports } from './use-reports';
 
 if (process.env.NODE_ENV !== 'production') {
@@ -57,6 +62,8 @@ if (process.env.NODE_ENV !== 'production') {
 type DashboardProps = {
   data: DashboardData;
   licenseKey?: string;
+  /** The demo clock (lib/clock.ts): days ahead of the real date and the day Munim treats as today. */
+  clock?: { offset: number; today: string };
   /** OpenAI models the assistant may use; omitted when no key is configured, which hides the assistant. */
   aiModels?: string[];
 };
@@ -77,7 +84,7 @@ export function Dashboard(props: DashboardProps) {
   return inBrowser ? <ReportsDashboard {...props} /> : <DashboardSkeleton />;
 }
 
-function ReportsDashboard({ data, licenseKey, aiModels }: DashboardProps) {
+function ReportsDashboard({ data, clock, licenseKey, aiModels }: DashboardProps) {
   const { store, latest, update, editReport } = useReports();
   const apiRef = useRef<AgStudioApi | null>(null);
 
@@ -87,6 +94,22 @@ function ReportsDashboard({ data, licenseKey, aiModels }: DashboardProps) {
   const [history, setHistory] = useState<StudioHistory>(NO_HISTORY);
   const [mode, setMode] = useState<AgStudioMode>('view');
   const [dialog, setDialog] = useState<DashboardDialog>(null);
+
+  // When Munim acts (an approval in the queue widget, a tool call in the assistant), re-read the
+  // server data so grids and charts over agent_actions and the forecast catch up. Debounced, since
+  // one approval can fire several events.
+  const router = useRouter();
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const off = onMunimChanged(() => {
+      clearTimeout(timer);
+      timer = setTimeout(() => router.refresh(), 1500);
+    });
+    return () => {
+      clearTimeout(timer);
+      off();
+    };
+  }, [router]);
 
   const { reports } = store;
   // The open report, as it was last saved.
@@ -141,7 +164,6 @@ function ReportsDashboard({ data, licenseKey, aiModels }: DashboardProps) {
       state: current,
       updatedAt: new Date().toISOString(),
     }));
-    console.log('[AG Studio] saved report', saved.name, current);
   };
   const discard = () =>
     load(saved, reportState.pageToSelect(saved.state, state.selectedPageId));
@@ -214,6 +236,7 @@ function ReportsDashboard({ data, licenseKey, aiModels }: DashboardProps) {
 
   return (
     <AppShell
+      topBarActions={clock && <ClockPill offset={clock.offset} today={clock.today} />}
       sidebar={
         <ReportsSidebar
           reports={reports}
@@ -258,8 +281,9 @@ function ReportsDashboard({ data, licenseKey, aiModels }: DashboardProps) {
       <div className="min-h-0 flex-1">
         {hasData(data) ? (
           <AgStudioProvider licenseKey={licenseKey} modules={ai ? [AgStudioAiModule] : undefined}>
-            <AgStudio
+            <AgStudio<MunimRegistry>
               style={{ height: '100%', width: '100%' }}
+              widgets={munimWidgets}
               theme={agStudioPayPalTheme}
               layout={{ widgetBorderEnabled: true }}
               data={studioData}
@@ -269,13 +293,8 @@ function ReportsDashboard({ data, licenseKey, aiModels }: DashboardProps) {
               onApiReady={(event) => {
                 apiRef.current = event.api;
               }}
-              onStudioReady={(event) => {
-                const current = event.api.getState();
-                console.log('[AG Studio] initial state', current);
-                setStudioState(current);
-              }}
+              onStudioReady={(event) => setStudioState(event.api.getState())}
               onStateUpdated={(event) => {
-                console.log('[AG Studio] state updated', event.state);
                 const { undo, redo } = event.api.getHistory();
                 setStudioState(event.state);
                 setHistory({ canUndo: undo.length > 0, canRedo: redo.length > 0 });
@@ -287,6 +306,7 @@ function ReportsDashboard({ data, licenseKey, aiModels }: DashboardProps) {
         )}
       </div>
 
+      <Toaster />
       <UnsavedChangesDialog
         open={dialog?.kind === 'unsaved'}
         reportName={saved.name}

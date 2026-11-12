@@ -9,6 +9,7 @@ import type {
   AgRelationDefinition,
 } from 'ag-studio';
 import type { DashboardData } from '@/lib/dashboard-data';
+import type { MunimRegistry } from './widgets';
 
 // --- Helpers ----------------------------------------------------------------------
 
@@ -57,8 +58,11 @@ const ratio = (id: string, name: string, description: string, numerator: string,
 export const hasData = (data: DashboardData) =>
   [data.invoices, data.transactions, data.products, data.plans, data.balances].some((rows) => rows.length > 0);
 
-export function buildStudioData(data: DashboardData): AgDataSourcesDefinition {
+// Typed for Munim's widget registry (./widgets), which the dashboard's AgStudio uses.
+export function buildStudioData(data: DashboardData): AgDataSourcesDefinition<MunimRegistry> {
   const dates = [
+    ...data.forecast.map((r) => r.date),
+    ...data.agent_actions.map((r) => r.date.slice(0, 10)),
     ...data.invoices.map((r) => r.invoiceDate),
     ...data.invoicePayments.map((r) => r.date),
     ...data.transactions.map((r) => r.date?.slice(0, 10)),
@@ -111,6 +115,10 @@ export function buildStudioData(data: DashboardData): AgDataSourcesDefinition {
           ['agingBucket', 'Aging Bucket', 'textFormat'],
           ['daysToPay', 'Days to Pay', 'integerFormat'],
           ['taxTotal', 'Tax', 'currencyFormat'],
+          ['riskLevel', 'Risk', 'textFormat'],
+          ['riskRules', 'Risk Rules Hit', 'textFormat'],
+          ['remindersSent', 'Reminders Sent', 'integerFormat'],
+          ['source', 'Created From', 'textFormat'],
         ]),
       },
       {
@@ -220,6 +228,7 @@ export function buildStudioData(data: DashboardData): AgDataSourcesDefinition {
           ['withheld', 'Withheld Balance', 'currencyFormat'],
         ]),
       },
+      ...munimSources(data),
     ],
     relationships: [
       manyToOne('invoice-customer', 'invoices.customerId', 'customers.id'),
@@ -230,6 +239,12 @@ export function buildStudioData(data: DashboardData): AgDataSourcesDefinition {
       onCalendar('invoicePayments', 'date'),
       onCalendar('transactions', 'date', 'day'),
       onCalendar('payouts', 'date', 'day'),
+      // Munim
+      manyToOne('invoice-client-profile', 'invoices.customerId', 'client_profiles.email'),
+      manyToOne('action-invoice', 'agent_actions.invoiceId', 'invoices.id'),
+      onCalendar('forecast', 'date'),
+      onCalendar('agent_actions', 'date', 'day'),
+      onCalendar('agent_runs', 'startedAt', 'day'),
     ],
     calendars: [
       {
@@ -248,4 +263,87 @@ export function buildStudioData(data: DashboardData): AgDataSourcesDefinition {
       ratio('refundRate', 'Refund Rate', 'Refunded / paid.', 'invoices.refundedAmount', 'invoices.paidAmount'),
     ],
   };
+}
+
+// Munim's tables (lib/dashboard-data.ts munimTables), so reports and the assistant can use the
+// forecast, client profiles and everything Munim did alongside the PayPal data.
+function munimSources(data: DashboardData): AgDataSourcesDefinition<MunimRegistry>['sources'] {
+  return [
+    {
+      id: 'forecast',
+      name: 'Cash Forecast',
+      description:
+        `Munim's 30-day cash forecast in ${data.forecastCurrency}, one row per day. A heuristic: each open invoice is expected on its due date plus the client's average days late, weighted by a probability from their payment style. ` +
+        'cumulative_expected and do_nothing_cumulative are running balances starting from the PayPal available balance, so never sum them across days; read the value on a date. expected_inflow is that day\'s expected collections with Munim chasing.',
+      data: data.forecast,
+      fields: fields([
+        ['date', 'Forecast Date', 'dateFormat'],
+        ['expected_inflow', 'Expected Inflow', 'currencyFormat'],
+        ['cumulative_expected', 'Cash With Munim', 'currencyFormat'],
+        ['do_nothing_inflow', 'Inflow If Nothing Is Done', 'currencyFormat'],
+        ['do_nothing_cumulative', 'Cash If Nothing Is Done', 'currencyFormat'],
+        ['day', 'Days From Today', 'integerFormat', true],
+        ['currency', 'Forecast Currency', 'textFormat', true],
+      ]),
+    },
+    {
+      id: 'client_profiles',
+      name: 'Client Profiles',
+      description:
+        'One row per client email, keyed to invoices.customerId. paymentStyle is prompt, slow, partial (has paid in parts) or unknown (no paid invoices yet); avgDaysLate is the average days paid after the due date.',
+      data: data.client_profiles,
+      fields: fields([
+        ['email', 'Client Email', 'textFormat'],
+        ['name', 'Client Name', 'textFormat'],
+        ['company', 'Client Company', 'textFormat'],
+        ['paymentStyle', 'Payment Style', 'textFormat'],
+        ['avgDaysLate', 'Average Days Late', 'decimalFormat'],
+        ['invoicesPaid', 'Invoices Paid', 'integerFormat'],
+        ['invoicesOpen', 'Invoices Open', 'integerFormat'],
+        ['notes', 'Client Notes', 'textFormat'],
+      ]),
+    },
+    {
+      id: 'agent_actions',
+      name: 'Agent Actions',
+      description:
+        "Every action Munim decided, with its one-sentence reason. status: executed, proposed (waiting for the owner's approval), approved, skipped or failed. guardrail is the code of the guardrail that decided (over_limit, too_soon, max_reminders, quiet_weekend...). Executed is 1 for executed actions, for counting.",
+      data: data.agent_actions,
+      fields: fields([
+        ['id', 'Action ID', 'textFormat', true],
+        ['date', 'Action Time', 'dateTimeFormat'],
+        ['invoiceId', 'Action Invoice ID', 'textFormat', true],
+        ['invoiceNumber', 'Action Invoice', 'textFormat'],
+        ['client', 'Action Client', 'textFormat'],
+        ['clientEmail', 'Action Client Email', 'textFormat', true],
+        ['action', 'Action', 'textFormat'],
+        ['actionType', 'Action Type', 'textFormat', true],
+        ['status', 'Action Status', 'textFormat'],
+        ['guardrail', 'Guardrail', 'textFormat'],
+        ['guardrailDetail', 'Guardrail Detail', 'textFormat', true],
+        ['reason', 'Reason', 'textFormat'],
+        ['amountDue', 'Amount Chased', 'currencyFormat'],
+        ['currency', 'Action Currency', 'textFormat', true],
+        ['riskLevel', 'Risk At Decision', 'textFormat'],
+        ['decidedBy', 'Decided By', 'textFormat'],
+        ['debugId', 'PayPal Debug ID', 'textFormat', true],
+        ['executed', 'Executed', 'integerFormat'],
+      ]),
+    },
+    {
+      id: 'agent_runs',
+      name: 'Agent Runs',
+      description: 'Each collections run: manual, cron or webhook, with its summary and how many actions it executed or put in the approval queue.',
+      data: data.agent_runs,
+      fields: fields([
+        ['id', 'Run ID', 'textFormat', true],
+        ['trigger', 'Run Trigger', 'textFormat'],
+        ['startedAt', 'Run Started', 'dateTimeFormat'],
+        ['finishedAt', 'Run Finished', 'dateTimeFormat', true],
+        ['summary', 'Run Summary', 'textFormat'],
+        ['proposed', 'Actions Queued', 'integerFormat'],
+        ['executed', 'Actions Executed', 'integerFormat'],
+      ]),
+    },
+  ];
 }

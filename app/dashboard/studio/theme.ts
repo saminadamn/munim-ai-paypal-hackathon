@@ -1,4 +1,4 @@
-// AG Studio theme for the PayPal dashboard. Every value points at a design token from
+// AG Studio theme for the Munim command centre (the PayPal dashboard). Every value points at a design token from
 // app/globals.css, the same variables the shell's Tailwind classes use, so Studio renders as
 // part of the page rather than a component embedded in it: change a token there and the shell,
 // widgets, grids and charts all follow.
@@ -27,6 +27,19 @@ export const agStudioPayPalTheme = studioTheme.withParams({
   accentColor: token('blue'),
   iconColor: token('navy'),
   rowHoverColor: token('highlight'),
+
+  // Shapes match the app outside Studio: 8px cards, pill buttons (the shell's rounded-full buttons),
+  // 4px inputs (the Inbox and Agent forms).
+  borderRadius: 8,
+  buttonBorderRadius: 999,
+  inputBorderRadius: 4,
+  studioPanelItemBorderRadius: 6,
+  studioPanelChevronButtonBorderRadius: 6,
+
+  // The AI assistant panel reads as part of the app: Munim's highlight for its own messages.
+  studioAiPanelInputMessageBackgroundColor: token('highlight'),
+  studioAiPanelButtonHoverBackgroundColor: token('highlight'),
+  studioAiPanelRichTextAccentBackgroundColor: token('highlight'),
 
   // No frame: the canvas is the page's own background. Each widget is inset 12px inside its
   // grid cell, so 20px of padding puts widget edges on the header's 32px gutter.

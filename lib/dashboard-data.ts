@@ -14,12 +14,19 @@ import {
   type Product,
   type Transaction,
 } from './paypal';
+import { db, dbEnabled, getSettings } from './db';
+import { actionLabel, payloadOf } from './munim/action-payload';
+import { computeForecast } from './munim/forecast';
+import { clientHistories } from './munim/receivables';
+import { assessRisk, riskSentence } from './munim/risk';
 
 // Flat rows for the Dashboard's AG Studio data sources. Relationships between them:
 //   invoices.customerId        -> customers.id
 //   invoiceItems.invoiceId     -> invoices.id
 //   invoicePayments.invoiceId  -> invoices.id
 //   plans.productId            -> products.id
+//   invoices.customerId        -> client_profiles.email   (Munim)
+//   agent_actions.invoiceId    -> invoices.id             (Munim)
 // Invoice, payment, transaction and payout dates also bind to a shared calendar.
 
 const DAY_MS = 86_400_000;
@@ -112,7 +119,7 @@ function customerRows(invoices: Invoice[]) {
     if (!byId.has(id)) {
       byId.set(id, {
         id,
-        name: info?.name?.full_name ?? info?.email_address ?? 'Unknown',
+        name: info?.name?.full_name ?? ([info?.name?.given_name, info?.name?.surname].filter(Boolean).join(' ') || info?.email_address) ?? 'Unknown',
         // Individuals have no business name; label them so company charts stay readable.
         company: info?.business_name ?? 'Individual',
         email: info?.email_address ?? null,
@@ -277,7 +284,140 @@ function balanceRows({ balances = [] }: Balances) {
 
 const TRANSACTION_WINDOW_MS = TRANSACTION_SEARCH_MAX_DAYS * DAY_MS;
 
-export async function getDashboardData(asOf = new Date()) {
+// `agingAsOf` is the day overdue ages are measured from (Munim's demo clock); PayPal is queried up to `asOf`.
+// --- Munim ---------------------------------------------------------------------------
+// What Munim adds from its own database: client profiles, every agent action and run, and the
+// cash forecast. Empty when no database is configured, so the boilerplate dashboard still works.
+
+const SOURCE_LABEL: Record<string, string> = { chat: 'Typed', email: 'Email', whatsapp: 'WhatsApp', manual: 'Manual', paypal: 'PayPal' };
+
+async function munimTables(invoices: Invoice[], balances: Balances, today: Date) {
+  const [settings, profiles, metas, actions, runs] = dbEnabled()
+    ? await Promise.all([
+        getSettings(),
+        db.clientProfile.findMany(),
+        db.invoiceMeta.findMany(),
+        db.agentAction.findMany({ where: { actionType: { not: 'none' } }, orderBy: { createdAt: 'desc' }, take: 1000 }),
+        db.agentRun.findMany({ orderBy: { startedAt: 'desc' }, take: 200 }),
+      ]).catch((e) => {
+        console.error('[dashboard] Munim tables unavailable', e);
+        return [null, [], [], [], []] as const;
+      })
+    : ([null, [], [], [], []] as const);
+
+  const history = new Map(clientHistories(invoices).map((h) => [h.email, h]));
+  const profileByEmail = new Map(profiles.map((p) => [p.email, p]));
+  const metaById = new Map(metas.map((m) => [m.paypalId, m]));
+  const day = today.toISOString().slice(0, 10);
+
+  // Per invoice: Munim's risk level and rules, reminders sent, and where it came from.
+  const invoiceExtras = new Map(
+    invoices.map((inv) => {
+      const email = inv.primary_recipients?.[0]?.billing_info?.email_address?.toLowerCase() ?? 'unknown';
+      const profile = profileByEmail.get(email);
+      const style = profile?.paymentStyle ?? history.get(email)?.paymentStyle ?? 'unknown';
+      const due = inv.detail.payment_term?.due_date ?? inv.detail.invoice_date ?? day;
+      const open = RECEIVABLE.has(inv.status);
+      const meta = metaById.get(inv.id);
+      const risk = open
+        ? assessRisk({
+            daysOverdue: daysBetween(due, day),
+            amountDue: amountOf(inv.due_amount),
+            currency: inv.detail.currency_code,
+            avgDaysLate: style === 'unknown' ? null : (profile?.avgDaysLate ?? history.get(email)?.avgDaysLate ?? null),
+            paymentStyle: style,
+            remindersSent: meta?.remindersSent ?? 0,
+            daysSinceLastReminder: null,
+            approvalThreshold: settings?.approvalThreshold ?? 500,
+          })
+        : null;
+      return [
+        inv.id,
+        {
+          riskLevel: risk?.level ?? null,
+          riskRules: risk ? riskSentence(risk) || 'no rules hit' : null,
+          remindersSent: meta?.remindersSent ?? 0,
+          source: SOURCE_LABEL[meta?.source ?? 'paypal'] ?? meta?.source ?? 'PayPal',
+        },
+      ];
+    }),
+  );
+
+  const clientProfiles = [...new Set([...profiles.map((p) => p.email), ...history.keys()])]
+    .filter((email) => email !== 'unknown')
+    .map((email) => {
+      const p = profileByEmail.get(email);
+      const h = history.get(email);
+      const style = p?.paymentStyle ?? h?.paymentStyle ?? 'unknown';
+      return {
+        email,
+        name: p?.name ?? h?.name ?? email,
+        company: p?.company ?? h?.company ?? null,
+        paymentStyle: style,
+        avgDaysLate: style === 'unknown' ? null : (p?.avgDaysLate ?? h?.avgDaysLate ?? null),
+        invoicesPaid: h?.invoicesPaid ?? 0,
+        invoicesOpen: h?.invoicesOpen ?? 0,
+        notes: p?.notes ?? '',
+      };
+    });
+
+  const agentActions = actions.map((a) => {
+    const p = payloadOf(a);
+    const guardrails = (a.guardrail ?? '').split('; ').filter(Boolean);
+    return {
+      id: a.id,
+      date: a.createdAt.toISOString(),
+      invoiceId: a.paypalInvoiceId,
+      invoiceNumber: a.invoiceNumber,
+      client: p.clientName ?? null,
+      clientEmail: p.clientEmail ?? null,
+      action: actionLabel(a.actionType),
+      actionType: a.actionType,
+      status: a.status,
+      guardrail: guardrails[0]?.split(': ')[0] ?? 'none',
+      guardrailDetail: a.guardrail,
+      reason: a.reason,
+      amountDue: p.amountDue ?? 0,
+      currency: p.currency ?? null,
+      riskLevel: p.riskLevel ?? null,
+      decidedBy: p.decidedBy ?? (a.actionType === 'create_invoice' ? 'owner' : null),
+      debugId: p.debugId ?? null,
+      executed: a.status === 'executed' ? 1 : 0,
+    };
+  });
+
+  const agentRuns = runs.map((r) => ({
+    id: r.id,
+    trigger: r.trigger,
+    startedAt: r.startedAt.toISOString(),
+    finishedAt: r.finishedAt?.toISOString() ?? null,
+    summary: r.summary,
+    proposed: r.proposed,
+    executed: r.executed,
+  }));
+
+  const forecast = computeForecast({
+    invoices,
+    balances,
+    profiles: profiles.map((p) => ({ email: p.email, avgDaysLate: p.avgDaysLate, paymentStyle: p.paymentStyle })),
+    today,
+  });
+
+  return {
+    invoiceExtras,
+    tables: {
+      client_profiles: clientProfiles,
+      agent_actions: agentActions,
+      agent_runs: agentRuns,
+      forecast: forecast.rows.map((r) => ({ ...r, currency: forecast.currency })),
+    },
+    forecastCurrency: forecast.currency,
+  };
+}
+
+const NO_EXTRAS = { riskLevel: null, riskRules: null, remindersSent: 0, source: 'PayPal' };
+
+export async function getDashboardData(asOf = new Date(), agingAsOf = asOf) {
   const [products, plans, invoices, transactions, balances] = await Promise.all([
     listProducts(),
     listPlans(),
@@ -285,12 +425,13 @@ export async function getDashboardData(asOf = new Date()) {
     searchTransactions(new Date(asOf.getTime() - TRANSACTION_WINDOW_MS), asOf),
     getBalances(),
   ]);
-  const today = asOf.toISOString().slice(0, 10);
+  const today = agingAsOf.toISOString().slice(0, 10);
+  const munim = await munimTables(invoices, balances, agingAsOf);
 
   return {
     asOf: asOf.toISOString(),
     customers: customerRows(invoices),
-    invoices: invoiceRows(invoices, today),
+    invoices: invoiceRows(invoices, today).map((row) => ({ ...row, ...(munim.invoiceExtras.get(row.id) ?? NO_EXTRAS) })),
     invoiceItems: invoiceItemRows(invoices),
     invoicePayments: invoicePaymentRows(invoices),
     products: productRows(products),
@@ -298,6 +439,8 @@ export async function getDashboardData(asOf = new Date()) {
     transactions: transactionRows(transactions),
     payouts: payoutRows(transactions),
     balances: balanceRows(balances),
+    ...munim.tables,
+    forecastCurrency: munim.forecastCurrency,
   };
 }
 

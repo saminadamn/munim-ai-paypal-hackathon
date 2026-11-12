@@ -18,12 +18,15 @@ export type SavedReport = {
 
 export type StoredReports = { reports: SavedReport[]; activeId: string };
 
-const STORAGE_KEY = 'ag-paypal-demo:reports:v1';
+// v2: the built-in report gained the Munim and Clients pages; a new key lets saved copies of the old one go.
+const STORAGE_KEY = 'ag-paypal-demo:reports:v2';
 
 export const BUILT_IN_ID = 'paypal-overview';
 
 // Sidebar titles for the built-in report's pages, keyed by page id in initial-report.ts.
 const defaultPageTitles: Record<string, string> = {
+  munim: 'Munim',
+  clients: 'Clients',
   revenue: 'Revenue',
   receivables: 'Receivables',
   cash: 'Cash & payouts',
@@ -32,7 +35,7 @@ const defaultPageTitles: Record<string, string> = {
 
 export const defaultReport = (): SavedReport => ({
   id: BUILT_IN_ID,
-  name: 'PayPal overview',
+  name: 'Munim command centre',
   builtIn: true,
   pageTitles: defaultPageTitles,
   state: dashboardReport,

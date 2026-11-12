@@ -28,11 +28,12 @@ function BrandLockup() {
   );
 }
 
-function TopBar() {
+function TopBar({ actions }: { actions?: ReactNode }) {
   return (
     <header className="flex h-16 shrink-0 items-center gap-6 border-b border-pp-border bg-white px-6">
       <BrandLockup />
       <div className="ml-auto flex items-center gap-1 text-pp-navy">
+        {actions && <span className="mr-3">{actions}</span>}
         <span className="inline-flex size-9 items-center justify-center rounded-full" title="Help">
           <HelpIcon />
         </span>
@@ -53,13 +54,16 @@ function TopBar() {
 export function AppShell({
   sidebar,
   children,
+  topBarActions,
 }: {
   sidebar: ReactNode;
   children: ReactNode;
+  /** Shown at the right of the top bar, before the account (the demo clock). */
+  topBarActions?: ReactNode;
 }) {
   return (
     <div className="flex h-dvh flex-col bg-pp-canvas font-paypal text-pp-ink">
-      <TopBar />
+      <TopBar actions={topBarActions} />
       <div className="flex min-h-0 flex-1">
         <nav className="flex w-64 shrink-0 flex-col border-r border-pp-border bg-white" aria-label="Reports">
           {sidebar}
