@@ -26,7 +26,7 @@ Priya
 
 > On Tue, you wrote:
 > Happy to take this on. Send me the final list and I'll invoice once you confirm.`,
-  whatsapp: `[10:42] Rohit Sharma: bhai 2 logo variations aur ek banner bana do, total 15000, payment next friday tak kar dena
+  whatsapp: `[10:42] Rohit Sharma: bhai 2 logo variations aur ek banner bana do, total $450, payment next friday tak kar dena
 [10:44] You: done bhai, kal tak bhej deta hoon
 [10:45] Rohit Sharma: ok, invoice rohit@sharmatraders.example.com pe bhej dena`,
 };
