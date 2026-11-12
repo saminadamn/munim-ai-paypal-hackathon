@@ -13,6 +13,7 @@ import {
   enableDevValidations,
   NumberFilterModule,
   QuickFilterModule,
+  RowStyleModule,
   TextFilterModule,
   themeQuartz,
   type ColDef,
@@ -20,6 +21,8 @@ import {
   type ValueFormatterParams,
 } from 'ag-grid-community';
 import { AgGridProvider, AgGridReact } from 'ag-grid-react';
+import { formatMoney } from '@/lib/format';
+import { RowDetailPanel, type RowDetail } from './row-detail-panel';
 
 if (process.env.NODE_ENV !== 'production') {
   enableDevValidations();
@@ -34,6 +37,8 @@ const modules = [
   DateFilterModule,
   QuickFilterModule,
   ColumnAutoSizeModule,
+  // Pointer cursor on clickable rows.
+  RowStyleModule,
 ];
 
 // Same PayPal tokens as the dashboard (app/globals.css).
@@ -50,20 +55,23 @@ const theme = themeQuartz.withParams({
 export type Row = Record<string, unknown>;
 
 // Money columns hold numbers and format them in the row's `currency`.
-const formatMoney = ({ value, data }: ValueFormatterParams<Row>) =>
+const formatMoneyCell = ({ value, data }: ValueFormatterParams<Row>) =>
   typeof value === 'number' && typeof data?.currency === 'string'
-    ? value.toLocaleString('en-US', { style: 'currency', currency: data.currency })
+    ? formatMoney(value, data.currency)
     : '';
 
 const columnTypes: ColTypeDefs<Row> = {
-  money: { valueFormatter: formatMoney, filter: 'agNumberColumnFilter' },
+  money: { valueFormatter: formatMoneyCell, filter: 'agNumberColumnFilter' },
 };
 
 const defaultColDef: ColDef<Row> = { filter: true };
 const autoSizeStrategy = { type: 'fitCellContents' } as const;
 
-export function DataGrid({ rows, columns }: { rows: Row[]; columns: ColDef<Row>[] }) {
+/** `details`, keyed by each row's `id`, makes rows clickable: a click opens that row's side panel. */
+export function DataGrid({ rows, columns, details }: { rows: Row[]; columns: ColDef<Row>[]; details?: Record<string, RowDetail> }) {
   const [search, setSearch] = useState('');
+  const [openId, setOpenId] = useState<string | null>(null);
+  const open = openId && details ? details[openId] : undefined;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -86,9 +94,14 @@ export function DataGrid({ rows, columns }: { rows: Row[]; columns: ColDef<Row>[
             quickFilterText={search}
             autoSizeStrategy={autoSizeStrategy}
             enableCellTextSelection
+            {...(details && {
+              onRowClicked: (e: { data?: Row }) => setOpenId(typeof e.data?.id === 'string' ? e.data.id : null),
+              rowStyle: { cursor: 'pointer' },
+            })}
           />
         </AgGridProvider>
       </div>
+      {open && <RowDetailPanel detail={open} onClose={() => setOpenId(null)} />}
     </div>
   );
 }

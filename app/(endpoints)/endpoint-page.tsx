@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import type { ColDef } from 'ag-grid-community';
 import { DataGrid, type Row } from './data-grid';
+import type { RowDetail } from './row-detail-panel';
 
 // The frame shared by the endpoint pages: which PayPal calls produced the data, which function in
 // lib/paypal.ts makes them, and the rows in an AG Grid.
@@ -11,6 +12,7 @@ export function EndpointPage({
   note,
   rows,
   columns,
+  details,
 }: {
   title: string;
   /** The REST calls behind the page, e.g. 'GET /v1/catalogs/products'. */
@@ -20,6 +22,8 @@ export function EndpointPage({
   note?: string;
   rows: Row[];
   columns: ColDef<Row>[];
+  /** Optional per-row side panel, keyed by row id; makes rows clickable. */
+  details?: Record<string, RowDetail>;
 }) {
   return (
     <main className="flex h-dvh flex-col bg-pp-canvas px-8 py-6 font-paypal text-pp-ink">
@@ -39,7 +43,7 @@ export function EndpointPage({
       </div>
       {note && <p className="mt-2 max-w-4xl text-sm text-pp-muted">{note}</p>}
       <div className="mt-5 flex min-h-0 flex-1 flex-col">
-        <DataGrid rows={rows} columns={columns} />
+        <DataGrid rows={rows} columns={columns} details={details} />
       </div>
     </main>
   );

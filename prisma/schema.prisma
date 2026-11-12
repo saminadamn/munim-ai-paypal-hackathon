@@ -1,0 +1,98 @@
+// Munim's own data. PayPal is the source of truth for invoices; this database only holds what
+// PayPal doesn't: client payment profiles, invoice provenance and reminder counts, agent runs and
+// actions, settings and the PayPal API log.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+// The connection URL is DATABASE_URL, read in prisma.config.ts.
+datasource db {
+  provider = "postgresql"
+}
+
+model ClientProfile {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  company      String?
+  // Average days paid after the due date (negative = early).
+  avgDaysLate  Float    @default(0)
+  // prompt | slow | partial | unknown
+  paymentStyle String   @default("unknown")
+  notes        String?
+  createdAt    DateTime @default(now())
+}
+
+// What Munim knows about a PayPal invoice beyond PayPal itself.
+model InvoiceMeta {
+  paypalId       String    @unique
+  // chat | email | whatsapp | manual | paypal
+  source         String    @default("paypal")
+  rawInput       String?   @db.Text
+  remindersSent  Int       @default(0)
+  lastReminderAt DateTime?
+  allowPartial   Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+}
+
+// Every decision Munim makes, with its one-sentence reason. The approval queue is the rows with
+// status "proposed".
+model AgentAction {
+  id              String    @id @default(cuid())
+  paypalInvoiceId String
+  invoiceNumber   String?
+  // create_invoice | none | gentle_reminder | firm_reminder | offer_partial | escalate_to_owner
+  actionType      String
+  reason          String
+  // Set when code overrode or held back what the model proposed.
+  guardrail       String?
+  // proposed | approved | executed | skipped | failed
+  status          String
+  // Message, client, amount, risk, run id, PayPal result or error.
+  payload         Json?
+  createdAt       DateTime  @default(now())
+  executedAt      DateTime?
+
+  @@index([paypalInvoiceId, createdAt])
+  @@index([status])
+}
+
+model AgentRun {
+  id         String    @id @default(cuid())
+  // manual | cron | webhook
+  trigger    String
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  summary    String?
+  proposed   Int       @default(0)
+  executed   Int       @default(0)
+}
+
+// A single row (id = 1).
+model Settings {
+  id                      Int     @id @default(1)
+  businessName            String  @default("My business")
+  ownerName               String  @default("Owner")
+  // Demo clock: lib/clock.ts now() = real time + this many days.
+  demoOffsetDays          Int     @default(0)
+  maxRemindersPerInvoice  Int     @default(3)
+  minDaysBetweenReminders Int     @default(3)
+  // Actions on invoices above this amount due need the owner's approval.
+  approvalThreshold       Float   @default(500)
+  // No reminders go out on Saturdays and Sundays (by the demo clock).
+  quietWeekends           Boolean @default(true)
+}
+
+model ApiLog {
+  id        String   @id @default(cuid())
+  method    String
+  path      String
+  status    Int
+  ms        Int
+  debugId   String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
