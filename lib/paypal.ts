@@ -321,7 +321,8 @@ export function getInvoice(id: string): Promise<Invoice & InvoicePayload> {
 }
 
 export async function generateNextInvoiceNumber(): Promise<string> {
-  const res = await request<{ invoice_number: string }>('POST', '/v2/invoicing/generate-next-invoice-number');
+  // PayPal answers 415 UNSUPPORTED_MEDIA_TYPE without a JSON Content-Type, so send an empty JSON body.
+  const res = await request<{ invoice_number: string }>('POST', '/v2/invoicing/generate-next-invoice-number', { body: {} });
   return res.invoice_number;
 }
 
