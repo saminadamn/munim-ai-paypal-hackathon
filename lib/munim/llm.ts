@@ -8,18 +8,22 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 
 // GEMINI_MODEL may list several ids, comma-separated; the first is tried first.
-const DEFAULT_MODELS = ['gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite'];
+const DEFAULT_MODELS = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-flash-latest'];
 
 function modelIds(): string[] {
   const ids = (process.env.GEMINI_MODEL ?? '').split(',').map((s) => s.trim()).filter(Boolean);
   return ids.length ? ids : DEFAULT_MODELS;
 }
 
-/** Overloaded, rate limited or a passing server error: worth trying the next model. */
+// A free-tier call can also hang without answering; give each model this long before moving on.
+const PER_MODEL_TIMEOUT_MS = 20_000;
+
+/** Overloaded, rate limited, timed out or a passing server error: worth trying the next model. */
 function tryNext(e: unknown): boolean {
-  const err = e as { statusCode?: number; isRetryable?: boolean; message?: string };
+  const err = e as { statusCode?: number; isRetryable?: boolean; message?: string; name?: string };
   if (err?.statusCode && [404, 429, 500, 502, 503, 504].includes(err.statusCode)) return true;
-  return Boolean(err?.isRetryable) || /high demand|overloaded|unavailable|quota/i.test(err?.message ?? '');
+  if (err?.name === 'TimeoutError' || err?.name === 'AbortError') return true;
+  return Boolean(err?.isRetryable) || /high demand|overloaded|unavailable|quota|timed? ?out|aborted/i.test(err?.message ?? '');
 }
 
 export function munimModel() {
@@ -28,17 +32,18 @@ export function munimModel() {
   const google = createGoogleGenerativeAI({ apiKey });
   const models = modelIds().map((id) => google(id));
   const first = models[0];
-  if (models.length === 1) return first;
 
-  async function inTurn<T>(call: (m: typeof first) => PromiseLike<T>): Promise<T> {
+  async function inTurn<T>(caller: AbortSignal | undefined, call: (m: typeof first, signal: AbortSignal) => PromiseLike<T>): Promise<T> {
     let last: unknown;
     for (const m of models) {
+      const signal = AbortSignal.any([AbortSignal.timeout(PER_MODEL_TIMEOUT_MS), ...(caller ? [caller] : [])]);
       try {
-        return await call(m);
+        return await call(m, signal);
       } catch (e) {
         last = e;
-        if (!tryNext(e)) throw e;
-        console.warn(`[Munim] ${m.modelId} unavailable, trying the next Gemini model`);
+        // Stop if the caller gave up (e.g. the browser closed the request), not just this model.
+        if (caller?.aborted || !tryNext(e)) throw e;
+        console.warn(`[Munim] ${m.modelId} unavailable (${(e as Error)?.message?.slice(0, 80)}), trying the next Gemini model`);
       }
     }
     throw last;
@@ -46,7 +51,7 @@ export function munimModel() {
 
   // Same prototype and fields as the first model, so the AI SDK treats it as that model.
   const fallback: typeof first = Object.assign(Object.create(Object.getPrototypeOf(first)), first);
-  fallback.doGenerate = (options) => inTurn((m) => m.doGenerate(options));
-  fallback.doStream = (options) => inTurn((m) => m.doStream(options));
+  fallback.doGenerate = (options) => inTurn(options.abortSignal, (m, abortSignal) => m.doGenerate({ ...options, abortSignal }));
+  fallback.doStream = (options) => inTurn(options.abortSignal, (m, abortSignal) => m.doStream({ ...options, abortSignal }));
   return fallback;
 }
