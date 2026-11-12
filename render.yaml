@@ -1,0 +1,63 @@
+# Render Blueprint for Munim: the web service, its Postgres database and an hourly collections job.
+# In Render: New > Blueprint, choose this repo, then fill in every value marked sync: false.
+#
+# Migrations run in the build, as `npx prisma migrate deploy`, so commit prisma/migrations (made
+# locally with `npm run db:migrate`). If the build can't reach the database, move the migration to
+#   preDeployCommand: npx prisma migrate deploy
+# (available on paid instance types) and take it out of buildCommand.
+
+services:
+  - type: web
+    name: munim
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npx prisma migrate deploy && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: munim-db
+          property: connectionString
+      - key: MUNIM_CRON_KEY
+        generateValue: true
+      # Secrets: set in the Render dashboard, never committed.
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: MERCHANT_EMAIL
+        sync: false
+      - key: AG_STUDIO_OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODELS
+        sync: false
+      - key: AG_STUDIO
+        sync: false
+
+  - type: cron
+    name: munim-collect
+    runtime: node
+    plan: starter
+    schedule: "0 * * * *"
+    buildCommand: "true"
+    startCommand: curl -fsS -X POST -H "x-munim-key: $MUNIM_CRON_KEY" "$APP_URL/api/munim/run"
+    envVars:
+      - key: MUNIM_CRON_KEY
+        fromService:
+          type: web
+          name: munim
+          envVarKey: MUNIM_CRON_KEY
+      # The web service's public URL, e.g. https://munim.onrender.com (no trailing slash).
+      - key: APP_URL
+        sync: false
+
+databases:
+  - name: munim-db
+    plan: basic-256mb
+    databaseName: munim
+    user: munim
