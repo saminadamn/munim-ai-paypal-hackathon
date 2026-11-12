@@ -95,7 +95,7 @@ export default function Landing() {
           </figcaption>
         </figure>
 
-        <p className="mt-14 text-center text-sm font-semibold text-pp-navy">Built on PayPal Invoicing, AG Studio and OpenAI</p>
+        <p className="mt-14 text-center text-sm font-semibold text-pp-navy">Built on PayPal Invoicing, AG Studio and Gemini</p>
 
         <section id="paypal-data" className="mt-20 mb-16 scroll-mt-8">
           <h2 className="text-sm font-semibold tracking-wider text-pp-muted uppercase">PayPal data</h2>

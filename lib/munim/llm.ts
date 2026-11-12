@@ -1,12 +1,13 @@
-// The model Munim's server-side agent logic runs on: the first of OPENAI_MODELS, with the same key
-// the AG Studio assistant uses (lib/ai.ts). Returns undefined when no key is set, so callers can
-// fall back to rules instead of failing.
+// The model Munim's server-side agent logic runs on: Google Gemini, with the key from GEMINI_API_KEY
+// (free tier at https://aistudio.google.com/apikey). Returns undefined when no key is set, so callers
+// can fall back to rules instead of failing.
 
-import { createOpenAI } from '@ai-sdk/openai';
-import { aiModels, openAiKey } from '../ai';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+
+const DEFAULT_MODEL = 'gemini-flash-latest';
 
 export function munimModel() {
-  const apiKey = openAiKey();
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return undefined;
-  return createOpenAI({ apiKey })(aiModels()[0]);
+  return createGoogleGenerativeAI({ apiKey })(process.env.GEMINI_MODEL || DEFAULT_MODEL);
 }

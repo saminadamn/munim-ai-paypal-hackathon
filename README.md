@@ -60,12 +60,12 @@ Everything runs against `api-m.sandbox.paypal.com`. There is no live mode.
 
 | AI tool | Job |
 | --- | --- |
-| OpenAI (the first model in `OPENAI_MODELS`, `gpt-5.4-mini` by default) via the Vercel AI SDK | Reads emails, chats and typed notes into an invoice using structured output checked against a zod schema. |
+| Google Gemini (`GEMINI_MODEL`, `gemini-flash-latest` by default, free tier) via the Vercel AI SDK | Reads emails, chats and typed notes into an invoice using structured output checked against a zod schema. |
 | Same model, same SDK | Decides one action per open invoice and writes the reminder text and a one-sentence reason. |
 | Same model, same SDK | Writes the plain-English summary at the end of each run. |
-| Munim as a custom agent in the AG Studio Agent Framework | Answers questions on the dashboard with its own tools (open invoices, client profile, forecast, approval queue, activity, propose reminder, run collections, approve action). It delegates charts and layout to Studio's built-in lead, page, widget, data and planning agents. |
+| Munim as a custom agent in the AG Studio Agent Framework (optional: needs an OpenAI key in `AG_STUDIO_OPENAI_API_KEY`, hidden without one) | Answers questions on the dashboard with its own tools (open invoices, client profile, forecast, approval queue, activity, propose reminder, run collections, approve action). It delegates charts and layout to Studio's built-in lead, page, widget, data and planning agents. |
 
-The model proposes and code decides. Every decision the model makes goes through guardrails in `lib/munim/collect.ts`, which can hold it for approval, downgrade it or skip it. Each outcome is saved as an `AgentAction` with a one-sentence reason and the name of any guardrail that changed it, so you can always see why Munim did something. If there is no OpenAI key, the same pipeline runs on simple rules, so the demo still works.
+The model proposes and code decides. Every decision the model makes goes through guardrails in `lib/munim/collect.ts`, which can hold it for approval, downgrade it or skip it. Each outcome is saved as an `AgentAction` with a one-sentence reason and the name of any guardrail that changed it, so you can always see why Munim did something. If there is no Gemini key, the same pipeline runs on simple rules, so the demo still works.
 
 ## Sponsor tools
 
@@ -114,7 +114,7 @@ Fill in `.env.local`:
 - `PAYPAL_CLIENT_ID`, `PAYPAL_SECRET`
 - `MERCHANT_EMAIL` (the business email) and `SANDBOX_PAYER_EMAIL` (the personal email)
 - `DATABASE_URL`
-- `AG_STUDIO_OPENAI_API_KEY`
+- `GEMINI_API_KEY` (free at https://aistudio.google.com/apikey)
 
 Every variable has a one-line comment in `.env.example`.
 
@@ -172,7 +172,7 @@ flowchart LR
   Dash --> API
   Dash --> AIP
   API --> Munim
-  Munim -->|proposes| LLM["OpenAI via AI SDK"]
+  Munim -->|proposes| LLM["Gemini via AI SDK"]
   Munim -->|decides, then calls| PP
   PP --> PayPal["PayPal sandbox<br/>Invoicing v2 · Reporting"]
   PayPal -->|events| WH

@@ -23,7 +23,7 @@ const SOURCE_HINT: Record<InvoiceSource, string> = { chat: 'a typed sentence', e
 
 export async function extractInvoice(text: string, opts: { source: InvoiceSource; currency: string; today: Date }): Promise<Extraction> {
   const model = munimModel();
-  if (!model) throw new Error('Set AG_STUDIO_OPENAI_API_KEY (or OPENAI_API_KEY) so Munim can read messages.');
+  if (!model) throw new Error('Set GEMINI_API_KEY so Munim can read messages.');
   const { output } = await generateText({
     model,
     output: Output.object({ schema: extractionSchema }),

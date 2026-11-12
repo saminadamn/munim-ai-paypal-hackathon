@@ -13,7 +13,7 @@
     "seed": "tsx --env-file-if-exists=.env.local scripts/seed.ts"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^4.0.115",
+    "@ai-sdk/google": "^4.0.118",
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
     "ag-grid-community": "36.2.0",
