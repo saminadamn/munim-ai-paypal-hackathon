@@ -2,6 +2,8 @@ import { dbEnabled } from '@/lib/db';
 import { runCollections, type RunEvent } from '@/lib/munim/collect';
 import { rateLimit, TEN_MINUTES } from '@/lib/rate-limit';
 
+export const maxDuration = 300;
+
 // POST -> text/event-stream. The Agent page's "Run Munim" button reads this to show progress as the
 // run happens; the run itself is the same function the cron route calls.
 export async function POST(request: Request) {

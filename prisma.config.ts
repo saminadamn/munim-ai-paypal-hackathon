@@ -10,7 +10,8 @@ export default defineConfig({
   schema: 'prisma/schema.prisma',
   migrations: { path: 'prisma/migrations' },
   datasource: {
-    // A placeholder lets `prisma generate` run at build time without a database.
-    url: process.env.DATABASE_URL ?? 'postgresql://localhost:5432/munim',
+    // Migrations need a direct connection: Neon on Vercel sets DATABASE_URL_UNPOOLED next to the
+    // pooled DATABASE_URL the app uses. A placeholder lets `prisma generate` run without a database.
+    url: process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL || 'postgresql://localhost:5432/munim',
   },
 });

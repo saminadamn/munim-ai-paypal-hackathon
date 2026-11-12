@@ -1,5 +1,7 @@
 import { rateLimit, TEN_MINUTES } from '@/lib/rate-limit';
 
+export const maxDuration = 300;
+
 // POST -> runs collections for the assistant's runCollections tool. The browser never sees the cron
 // key: this route adds it server-side and calls the same POST /api/munim/run the Render Cron Job uses.
 export async function POST(request: Request) {
