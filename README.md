@@ -2,7 +2,7 @@
 
 Munim is the finance employee a small business can't afford to hire: it turns a message into a PayPal invoice, chases the client politely, and tells you when the money will land.
 
-**Live demo:** [https://munim-ai-paypal-hackathon.vercel.app]· **Video:** [https://youtu.be/LPo25pdSqCM?si=p3uiGWaLAl9j8BOO]· [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+**Live demo:** (https://munim-ai-paypal-hackathon.vercel.app/)· **Video:** [https://youtu.be/LPo25pdSqCM?si=p3uiGWaLAl9j8BOO]· [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com). Everything runs in the PayPal sandbox.
 
